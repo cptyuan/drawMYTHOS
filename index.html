@@ -1,0 +1,858 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>神法觉醒 — 简易版</title>
+<style>
+  /* 极简神秘风格样式 */
+  :root{--bg:#07060a;--panel:#0f0e14;--accent:#d9a94a;--muted:#9aa0a6}
+  html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial}
+  body{background:linear-gradient(180deg,#020204 0%, #081018 60%);color:#e6e6e6;padding:20px;display:flex;align-items:flex-start;justify-content:center}
+  .wrap{width:980px;max-width:96%;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.02));border-radius:12px;padding:20px;box-shadow:0 8px 30px rgba(0,0,0,0.6)}
+  header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+  h1{margin:0;font-size:22px;color:var(--accent)}
+  p.lead{margin:0;color:var(--muted);font-size:13px}
+  .controls{display:flex;gap:8px;align-items:center}
+  button{background:transparent;border:1px solid rgba(255,255,255,0.06);color:inherit;padding:8px 12px;border-radius:8px;cursor:pointer}
+  button.primary{background:linear-gradient(90deg,#3b2c63,#643c2a);border: none;color:#fff;box-shadow:0 6px 14px rgba(0,0,0,0.5)}
+  .grid{display:grid;grid-template-columns:1fr;gap:14px}
+  .panel{background:var(--panel);padding:14px;border-radius:10px;border:1px solid rgba(255,255,255,0.02)}
+  .pool{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;max-height:420px;overflow:auto;padding:4px}
+  .item{padding:8px;border-radius:8px;background:linear-gradient(180deg, rgba(255,255,255,0.01), transparent);font-size:13px}
+  .prototype{color:var(--accent);font-weight:600}
+  .source{color:var(--muted);font-size:12px}
+  .tags{margin-top:6px;font-size:12px;color:#dcdcdc}
+  .result{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:220px}
+  .result .proto{font-size:20px;color:var(--accent);font-weight:700}
+  .result .src{font-size:12px;color:var(--muted)}
+  .tag{display:inline-block;background:rgba(255,255,255,0.03);padding:6px 8px;border-radius:8px;margin:6px 4px 0;font-size:12px}
+  input[type="file"]{display:none}
+  .small{font-size:12px;color:var(--muted);margin-top:8px}
+  .row{display:flex;gap:8px;align-items:center}
+  .search{padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.03);background:transparent;color:inherit}
+  #drawBtn{
+  font-size: 34px;
+  padding: 18px 44px;
+  border-radius: 14px;
+}
+
+.controls{
+  display:flex !important;
+  justify-content:center;
+}
+  header{
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  padding:40px 0;      /* 拉开头部高度 */
+}
+
+  
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>🔮 神法觉醒</h1>
+        <p class="lead">随机从神法池抽取一个神法原型（显示：原型 / 来源 / 标签）</p>
+      </div>
+      <div class="controls">
+        <button id="drawBtn" class="primary">抽取神法</button>
+        <label style="cursor:pointer">
+          <input id="fileInput" type="file" accept=".json" />
+          <button>导入 JSON</button>
+        </label>
+        <button id="exportBtn">导出 JSON</button>
+        <button id="fillBtn">填充到 700（占位）</button>
+      </div>
+    </header>
+
+    <div class="grid">
+      <section class="panel">
+        <div class="row" style="justify-content:space-between;margin-bottom:8px">
+          <div style="font-weight:600">神法池</div>
+          <input id="search" class="search" placeholder="搜索 原型 / 来源 / 标签" />
+        </div>
+
+        <div id="pool" class="pool" style="display:none;"></div>
+        <div class="small" style="margin-top:8px">共 <span id="count">0</span> 条（可搜索 / 导入 / 导出）</div>
+      </section>
+
+      <aside class="panel">
+        <h3 style="margin:0 0 8px 0">抽取结果</h3>
+        <div id="result" class="result">
+          <div class="proto">尚未抽取</div>
+          <div class="src"></div>
+          <div id="tagWrap" style="margin-top:10px"></div>
+        </div>
+
+        <div style="margin-top:12px;display:flex;gap:8px">
+          <button id="copyBtn">复制当前结果（JSON）</button>
+          <button id="clearBtn">清空结果</button>
+        </div>
+
+        <div class="small">提示：JSON 条目要求字段：prototype, source, tags（数组）。</div>
+      </aside>
+    </div>
+  </div>
+
+<script>
+/* 简易 JS：预置少量示例,支持导入/导出 JSON、搜索、抽取、填充占位 */
+let pool = [
+  { id:"A-001", prototype:"奥丁", source:"北欧神话", tags:["符文洞察","战争意志","牺牲交换","预言幻视"]},
+{ id:"A-002", prototype:"洛基", source:"北欧神话", tags:["诡计塑形","谎言具现","身份扭转","灾厄引导"]},
+{ id:"A-003", prototype:"索尔", source:"北欧神话", tags:["雷霆打击","神器感应","守护信念","正面碾压"]},
+{ id:"A-004", prototype:"芙蕾雅", source:"北欧神话", tags:["情欲操控","战争祝福","命运牵线","灵魂抚慰"]},
+{ id:"A-005", prototype:"海姆达尔", source:"北欧神话", tags:["全域监察","预警先知","壁垒守卫","空间感知"]},
+
+{ id:"A-006", prototype:"宙斯", source:"古希腊神话", tags:["天雷审判","誓约制裁","权威镇压","风暴塑能"]},
+{ id:"A-007", prototype:"赫拉", source:"古希腊神话", tags:["嫉妒降罚","誓约锁定","血脉诅咒","精神压迫"]},
+{ id:"A-008", prototype:"波塞冬", source:"古希腊神话", tags:["海潮操纵","震荡引爆","生物驭使","领域覆没"]},
+{ id:"A-009", prototype:"雅典娜", source:"古希腊神话", tags:["战术演算","理性屏障","心智赋能","英魂召引"]},
+{ id:"A-010", prototype:"阿波罗", source:"古希腊神话", tags:["光域压制","音乐精神","病灾净除","远程裁杀"]},
+
+{ id:"A-011", prototype:"阿喀琉斯", source:"《伊利亚特》", tags:["狂战增幅","无伤躯壳","致命暴击","命门牵制"]},
+{ id:"A-012", prototype:"赫克托耳", source:"《伊利亚特》", tags:["英勇壁垒","军魂鼓舞","正面对决","不退意志"]},
+{ id:"A-013", prototype:"珀尔修斯", source:"古希腊神话", tags:["斩首仪式","镜面反杀","空域突袭","神物调用"]},
+{ id:"A-014", prototype:"奥菲斯", source:"古希腊神话", tags:["心曲操控","情绪共鸣","冥界通行","精神诱导"]},
+{ id:"A-015", prototype:"厄洛斯", source:"古希腊神话", tags:["情感寄生","宿命牵引","精神侵染","关系操纵"]},
+
+{ id:"A-016", prototype:"须佐之男", source:"日本神话", tags:["暴风斩裂","杀戮洗业","狂气爆发","天灾驱役"]},
+{ id:"A-017", prototype:"天照大神", source:"日本神话", tags:["圣光覆盖","净化扩散","治愈领域","信仰增幅"]},
+{ id:"A-018", prototype:"月读", source:"日本神话", tags:["月影渗透","精神静默","暗面裁决","梦域调度"]},
+{ id:"A-019", prototype:"伊邪那美", source:"日本神话", tags:["腐朽传播","亡者牵召","疫灾衍生","厄念凝结"]},
+{ id:"A-020", prototype:"安倍晴明", source:"日本阴阳师传说", tags:["式神驱役","结界铺设","占星算度","灵体侦测"]},
+
+{ id:"A-021", prototype:"孙悟空", source:"《西游记》", tags:["金刚抗性","风行突跃","多重分身","逆命斗志"]},
+{ id:"A-022", prototype:"哪吒", source:"《封神演义》", tags:["灵焰推进","武装形态","自爆重构","叛逆加护"]},
+{ id:"A-023", prototype:"二郎神杨戬", source:"《封神演义》", tags:["天眼锁定","魔兽驱令","拟态搏杀","追猎裁断"]},
+{ id:"A-024", prototype:"钟馗", source:"民俗信仰传说", tags:["恶灵拘缚","幽界索敌","正气威慑","镇压行刑"]},
+{ id:"A-025", prototype:"嫦娥", source:"中国神话", tags:["月域漂浮","孤绝庇护","长生仪轨","灵能贮存"]},
+
+{ id:"A-026", prototype:"摩西", source:"《旧约圣经》", tags:["神迹展开","律法裁断","信念屏障","群体引导"]},
+{ id:"A-027", prototype:"所罗门", source:"《圣经》与中世纪魔典传说", tags:["恶魔支配","封印铭刻","契约驾驭","权能编制"]},
+{ id:"A-028", prototype:"大卫王", source:"《圣经》", tags:["精准投射","战歌鼓舞","英雄幸运","暴击连发"]},
+{ id:"A-029", prototype:"贞德", source:"法国历史+圣女传说", tags:["信仰共鸣","圣焰加护","士气点燃","不屈献身"]},
+{ id:"A-030", prototype:"亚瑟王", source:"不列颠传说", tags:["圣剑调用","王权领域","誓骑召唤","秩序统合"]},
+
+{ id:"A-031", prototype:"梅林", source:"亚瑟王传说", tags:["未来预言","无形布阵","思维扭转","混沌编程"]},
+{ id:"A-032", prototype:"兰斯洛特", source:"圆桌骑士传奇", tags:["极致剑术","忠诚挣扎","爆发突进","战意共鸣"]},
+{ id:"A-033", prototype:"库丘林", source:"凯尔特神话", tags:["狂化觉醒","贯首枪术","生命燃烧","战魂咆哮"]},
+{ id:"A-034", prototype:"贝奥武夫", source:"盎格鲁-撒克逊史诗", tags:["屠兽加成","伤害抗拒","孤胆死斗","传奇成长"]},
+{ id:"A-035", prototype:"罗宾汉", source:"英国民间传说", tags:["精准狙击","弱富调衡","游击伏击","隐蔽转移"]},
+
+{ id:"A-036", prototype:"开膛手杰克", source:"19世纪伦敦都市案件", tags:["暗巷奇袭","精准切割","恐惧放大","踪迹消失"]},
+{ id:"A-037", prototype:"血腥玛丽", source:"欧美镜中召灵怪谈", tags:["镜域通灵","自我具现","精神反噬","召唤诅咒"]},
+{ id:"A-038", prototype:"斯兰德曼", source:"欧美网络都市传说", tags:["空间瞬移","精神污染","目击压迫","瘴域支配"]},
+{ id:"A-039", prototype:"厕所花子", source:"日本校园怪谈", tags:["门域穿行","恐惧放送","空间锁定","孩童召引"]},
+{ id:"A-040", prototype:"八尺大人", source:"日本都市怪谈", tags:["拟态诱骗","音波干扰","压迫恐惧","狩猎童域"]},
+
+{ id:"A-041", prototype:"灰姑娘", source:"格林童话", tags:["命运翻转","身份重塑","短效奇迹","时间诅咒"]},
+{ id:"A-042", prototype:"彼得潘", source:"詹姆斯·巴里童话", tags:["飞行领域","幻想塑形","心智童化","现实定格"]},
+{ id:"A-043", prototype:"匹诺曹", source:"《木偶奇遇记》", tags:["谎言增幅","木体重构","真实觉醒","形体伸缩"]},
+{ id:"A-044", prototype:"小红帽", source:"格林童话", tags:["危机预警","伪装识别","野性对抗","撤离加成"]},
+{ id:"A-045", prototype:"爱丽丝", source:"《爱丽丝梦游仙境》", tags:["认知错位","梦境跃迁","体型操纵","逻辑重写"]},
+
+{ id:"A-046", prototype:"熬烈", source:"封神神话（龙三太子）", tags:["水域统治","潮汐塑形","鳞甲防护","龙息涌流"]},
+{ id:"A-047", prototype:"涡彦", source:"日本妖怪传说（河童原型）", tags:["水战格斗","摔技掌控","灵液操纵","溺域封锁"]},
+{ id:"A-048", prototype:"瓦西里萨", source:"斯拉夫民间童话", tags:["女巫智慧","咒物支配","黑林引路","心火续命"]},
+{ id:"A-049", prototype:"拉罗娜", source:"墨西哥哭泣女鬼传说", tags:["哀嚎侵蚀","水域显形","情绪寄生","猎童诅咒"]},
+{ id:"A-050", prototype:"微笑男人", source:"欧美网络怪谈", tags:["尾随压迫","凝视折磨","心理撕裂","恐慌扩散"]},
+{ id:"A-051", prototype:"女娲", source:"中国上古神话", tags:["造物塑形","命脉修补","地脉重构","生机灌注"]},
+{ id:"A-052", prototype:"盘古", source:"中国开天传说", tags:["天地分裂","体魄化界","创世冲击","原初威压"]},
+{ id:"A-053", prototype:"蚩尤", source:"中国远古战神传说", tags:["战争狂怒","兵刃共鸣","血战增幅","战场统御"]},
+{ id:"A-054", prototype:"刑天", source:"中国上古神话", tags:["无首战意","不灭拼杀","躯魂错位","极限狂执"]},
+{ id:"A-055", prototype:"夸父", source:"中国神话", tags:["逐日疾行","耐力透支","献身奉燃","极限行军"]},
+
+{ id:"A-056", prototype:"后羿", source:"中国神话", tags:["远程狙杀","破日神箭","能量贯穿","天空制霸"]},
+{ id:"A-057", prototype:"大禹", source:"中国治水传说", tags:["洪流控制","地脉调节","工程塑成","灾害镇压"]},
+{ id:"A-058", prototype:"精卫", source:"中国神话", tags:["执念投射","复仇意志","海域填平","不屈意念"]},
+{ id:"A-059", prototype:"伏羲", source:"中国上古神话", tags:["八卦推演","命数演算","阵法铺设","文明启示"]},
+{ id:"A-060", prototype:"神农", source:"中国神话", tags:["百草鉴毒","生命调配","体质改良","抗性转移"]},
+
+{ id:"A-061", prototype:"拉", source:"古埃及神话", tags:["日轮灼烧","圣光净化","王权威慑","昼域支配"]},
+{ id:"A-062", prototype:"阿努比斯", source:"古埃及神话", tags:["灵魂称量","亡者引渡","冥途导航","死亡平衡"]},
+{ id:"A-063", prototype:"荷鲁斯", source:"古埃及神话", tags:["天空俯瞰","鹰眼锁定","圣战飞袭","护国誓能"]},
+{ id:"A-064", prototype:"伊西斯", source:"古埃及神话", tags:["复苏仪式","母性庇护","治愈秘咒","灵魂拼合"]},
+{ id:"A-065", prototype:"赛特", source:"古埃及神话", tags:["混沌引风","沙暴具现","毁灭主张","秩序破坏"]},
+
+{ id:"A-066", prototype:"吉尔伽美什", source:"美索不达米亚史诗", tags:["英雄支配","宝具齐射","王权威能","神性对抗"]},
+{ id:"A-067", prototype:"恩奇都", source:"《吉尔伽美什史诗》", tags:["野性解放","自然同调","力量共鸣","牺牲觉悟"]},
+{ id:"A-068", prototype:"伊什塔尔", source:"美索不达米亚神话", tags:["爱欲投射","战争煽动","情绪操控","生命赋权"]},
+{ id:"A-069", prototype:"马尔杜克", source:"巴比伦神话", tags:["混沌镇压","法则塑形","创世裁断","秩序再构"]},
+{ id:"A-070", prototype:"提亚马特", source:"巴比伦创世神话", tags:["原初灾厄","巨兽召唤","水域毁灭","母性狂潮"]},
+
+{ id:"A-071", prototype:"湿婆", source:"印度教神话", tags:["毁灭舞动","轮回切断","狂战显化","重生引爆"]},
+{ id:"A-072", prototype:"毗湿奴", source:"印度教神话", tags:["化身降临","因果守护","宇宙平衡","存续之力"]},
+{ id:"A-073", prototype:"梵天", source:"印度教神话", tags:["万法创写","世界编织","知识显化","文明起源"]},
+{ id:"A-074", prototype:"卡莉", source:"印度女神信仰", tags:["嗜血裁杀","恐惧化身","时间斩断","狂信附体"]},
+{ id:"A-075", prototype:"伽内什", source:"印度神话", tags:["障碍移除","好运召引","心智清明","命途引导"]},
+
+{ id:"A-076", prototype:"奎兹尔科亚特尔", source:"阿兹特克神话", tags:["羽蛇降临","风暴主宰","文明赐福","星界迁航"]},
+{ id:"A-077", prototype:"特斯卡特利波卡", source:"阿兹特克神话", tags:["暗面统御","镜像诅咒","阴影变形","宿命错位"]},
+{ id:"A-078", prototype:"维察波特利", source:"玛雅神话", tags:["战争祭仪","烈日压制","鲜血增幅","王权统兵"]},
+{ id:"A-079", prototype:"伊察姆纳", source:"玛雅神话", tags:["天象推演","医术圣能","文明启示","符文灌注"]},
+{ id:"A-080", prototype:"沙巴卡", source:"非洲神话传说", tags:["烈鼓召魂","部族鼓舞","兽灵附体","精神共振"]},
+
+{ id:"A-081", prototype:"浮士德", source:"德意志传说", tags:["契约缔结","灵魂献祭","能力置换","恶魔驱使"]},
+{ id:"A-082", prototype:"德古拉", source:"吸血鬼文学原型", tags:["血之再生","夜行化身","魅惑侵蚀","兽化显现"]},
+{ id:"A-083", prototype:"范海辛", source:"吸血鬼猎人传说", tags:["怪物侦测","圣器驱动","弱点打击","净化制猎"]},
+{ id:"A-084", prototype:"格林姆兄弟", source:"欧洲童话整理史", tags:["故事具现","童话召唤","规则扭转","叙事变形"]},
+{ id:"A-085", prototype:"铁皮人", source:"《绿野仙踪》", tags:["钢躯防御","心脏追寻","忠诚守卫","物理抗性"]},
+
+{ id:"A-086", prototype:"科学怪人怪物", source:"玛丽·雪莱《弗兰肯斯坦》", tags:["拼合法躯","电能激活","痛觉无惧","存在哀嚎"]},
+{ id:"A-087", prototype:"隐形人", source:"H.G.威尔斯小说", tags:["光学消失","潜入无声","防御规避","突袭专精"]},
+{ id:"A-088", prototype:"化身博士", source:"《化身博士》", tags:["人格分裂","力量倍增","精神失控","黑化变异"]},
+{ id:"A-089", prototype:"德瑞克医生", source:"《变蝇人》原型故事", tags:["躯体突变","节肢异化","灾变进化","自毁失控"]},
+{ id:"A-090", prototype:"无头骑士", source:"美国怪谈《断头谷传奇》", tags:["幽骑冲锋","斩首裁决","恐惧扩散","不死追猎"]},
+
+{ id:"A-091", prototype:"穿红鞋的女孩", source:"安徒生童话", tags:["强迫舞动","诅咒仪式","自毁美学","宿命惩戒"]},
+{ id:"A-092", prototype:"卖火柴的小女孩", source:"安徒生童话", tags:["幻觉投射","极寒抗拒","濒死祝福","灵光显现"]},
+{ id:"A-093", prototype:"尼德霍格", source:"北欧神话", tags:["世界树侵蚀","腐蚀吐息","终末接近","根域破坏"]},
+{ id:"A-094", prototype:"芬里尔", source:"北欧神话", tags:["锁链破解","野性狂化","终焉捕杀","灾厄奔袭"]},
+{ id:"A-095", prototype:"耶梦加得", source:"北欧神话", tags:["环世巨蛇","毒域扩张","海域封锁","灾世苏醒"]},
+
+{ id:"A-096", prototype:"糖果女巫", source:"格林童话《汉赛尔与格蕾特》", tags:["甘诱陷阱","心智麻痹","童心惑控","炉火终结"]},
+{ id:"A-097", prototype:"睡魔桑德曼", source:"欧美民间信仰", tags:["梦境操控","沉眠支配","意识游离","幻象塑形"]},
+{ id:"A-098", prototype:"泥偶", source:"犹太传说", tags:["咒文赋生","土躯驱役","指令执行","力量转移"]},
+{ id:"A-099", prototype:"卡律布狄斯", source:"古希腊神话", tags:["深渊吞噬","水流暴摄","空间牵吸","领域破灭"]},
+{ id:"A-100", prototype:"斯库拉", source:"古希腊神话", tags:["多首撕咬","海峡封锁","猎杀领域","灾兽具现"]},
+{ id:"A-101", prototype:"普罗米修斯", source:"希腊神话", tags:["火种赠予","违抗众神","技术启蒙","代价束缚"]},
+{ id:"A-102", prototype:"潘多拉", source:"希腊神话", tags:["好奇引爆","希望残留","秘盒诅咒","未知开释"]},
+{ id:"A-103", prototype:"女巫瑟西（Circe）", source:"希腊神话", tags:["药剂变形","动物化身","诱惑掌控","孤岛法术"]},
+{ id:"A-104", prototype:"赫卡忒", source:"希腊神话", tags:["十字路口祭祀","黑夜咒语","三相女巫","月相驱动"]},
+{ id:"A-105", prototype:"珀尔塞福涅", source:"希腊神话", tags:["冥界往返","季节转换","毒与治愈并存","收获与荒凉"]},
+
+{ id:"A-106", prototype:"凤凰", source:"多文化神话象征", tags:["涅槃重生","烈焰再生","不死循环","焚化净化"]},
+{ id:"A-107", prototype:"女武神（Valkyrie）", source:"北欧神话", tags:["战场挑选","灵魂接引","骑兵增幅","战意唤起"]},
+{ id:"A-108", prototype:"班西（Banshee）", source:"爱尔兰民间传说", tags:["哀嚎预警","死讯之音","情绪侵蚀","夜间回声"]},
+{ id:"A-109", prototype:"达拉汉（Dullahan）", source:"爱尔兰民间怪谈", tags:["无首追击","黑暗驾临","恐惧具象","夜骑猎影"]},
+{ id:"A-110", prototype:"巴巴雅嘎（Baba Yaga）", source:"斯拉夫民间童话", tags:["林中小屋","草药与暗术","导航欺骗","老姥智慧"]},
+
+{ id:"A-111", prototype:"莱希（Leshy）", source:"斯拉夫森林传说", tags:["树林主宰","迷路诱导","野性伪装","树根束缚"]},
+{ id:"A-112", prototype:"凯尔努诺斯（Cernunnos）", source:"凯尔特神话", tags:["兽性连结","角之召唤","自然律动","丰饶守护"]},
+{ id:"A-113", prototype:"安祖（Anzu）", source:"美索不达米亚神话", tags:["风暴掠夺","神禽之力","神器夺取","天空震慑"]},
+{ id:"A-114", prototype:"玛米·瓦塔（Mami Wata）", source:"非洲与海岸民俗", tags:["水魅诱惑","财富引导","灵水疗愈","海中交易"]},
+{ id:"A-115", prototype:"西尔芬（Sylph）", source:"西方元素传说", tags:["风之缠绕","轻盈移动","气流操控","声音模糊"]},
+
+{ id:"A-116", prototype:"卡莉（Kali）", source:"印度教民间与神话", tags:["毁灭与再生","血祭象征","夜之狂舞","时间斩断"]},
+{ id:"A-117", prototype:"伽内什（Ganesha）", source:"印度教神话", tags:["障碍移除","智慧启动","象头直觉","好运招引"]},
+{ id:"A-118", prototype:"玛雅祭司（泛指）", source:"玛雅文明民俗", tags:["星象仪式","祭祀能量","日历预示","牺牲与回响"]},
+{ id:"A-119", prototype:"羽蛇神（Quetzalcoatl）", source:"中美洲神话", tags:["风与知识之力","羽翼飞翔","文化赐福","天象解读"]},
+{ id:"A-120", prototype:"日耳曼守护巨人（泛称）", source:"日耳曼/北欧传说", tags:["巨力震荡","冰土压制","古地回声","守护遗迹"]},
+
+{ id:"A-121", prototype:"玛穆提（Mami）海洋女灵（泛）", source:"太平洋/非洲海洋民俗", tags:["潮汐呼唤","渔网诅咒","溺人幻觉","水镜映像"]},
+{ id:"A-122", prototype:"尼德霍格（Nidhogg）", source:"北欧神话", tags:["根系腐蚀","吞噬记忆","世界树侵蚀","深根怒吼"]},
+{ id:"A-123", prototype:"夜魔（Nightgaunt）", source:"洛夫克拉夫特式克苏鲁神话", tags:["无声追随","恐惧体感","阴影抓取","非理性撕裂"]},
+{ id:"A-124", prototype:"奈亚拉托提普（Nyarlathotep）形态之一", source:"克苏鲁神话", tags:["面具诱导","文明异化","语言传染","疯狂引导"]},
+{ id:"A-125", prototype:"塞壬（Siren）", source:"希腊/航海传说", tags:["歌声诱惑","航路迷失","心志掏空","浪潮引导"]},
+
+{ id:"A-126", prototype:"海妖（Mermaid 各文化版）", source:"全球海洋民俗", tags:["声线交易","潮情共鸣","水下呼唤","人鱼契约"]},
+{ id:"A-127", prototype:"雷鸟（Thunderbird）", source:"北美原住民传说", tags:["雷翼降临","风暴号令","图腾震慑","天空守护"]},
+{ id:"A-128", prototype:"盖亚（大地母亲）", source:"希腊/泛古神话", tags:["地脉回响","生命滋养","地震反击","土地誓约"]},
+{ id:"A-129", prototype:"图坦卡蒙（法老象征）", source:"古埃及历史与神话化", tags:["墓咒回响","王权余温","陵寝守护","黄金幻象"]},
+{ id:"A-130", prototype:"安卡（Anansi）", source:"西非民间故事", tags:["故事编织","诡计网罗","蜘蛛迷阵","智慧交易"]},
+
+{ id:"A-131", prototype:"巴格达的飞毯（传说物）", source:"一千零一夜", tags:["空间折叠","瞬移载具","风之旅途","隐藏行囊"]},
+{ id:"A-132", prototype:"魔法之书（泛指）", source:"民间与文学典籍", tags:["规则书写","法则更替","文字致命","禁咒贮存"]},
+{ id:"A-133", prototype:"达尔文式变异（概念化）", source:"近现代科学寓言", tags:["适者适配","突变启发","自然筛选","演化直觉"]},
+{ id:"A-134", prototype:"图灵谜影（计算神话）", source:"科技史与传说化", tags:["密码直觉","机器共鸣","解码幻视","人工拟像"]},
+{ id:"A-135", prototype:"莱茵河的女神（泛称）", source:"欧洲河流民俗", tags:["流水记忆","河灵诱导","潮汐誓言","湿地守护"]},
+
+{ id:"A-136", prototype:"阿玛泽（海盗/航海传说合成）", source:"海员传说", tags:["黑帆恐吓","惊涛指引","宝藏幻照","海员诅咒"]},
+{ id:"A-137", prototype:"黑胡子（历史海盗形象）", source:"历史与海盗传说", tags:["火雷威慑","舰队号令","私掠威名","恐吓策略"]},
+{ id:"A-138", prototype:"塞壬石像（传说物）", source:"航海传说变体", tags:["石化凝视","歌声延展","航程标记","秘石喚醒"]},
+{ id:"A-139", prototype:"砂之幽灵（沙漠传说）", source:"中东/北非民俗", tags:["幻影风暴","热浪迷途","沙埋囚禁","夜热低语"]},
+{ id:"A-140", prototype:"塔罗女王（象征原型）", source:"占卜与神秘学", tags:["命盘读解","大牌显示","命运扭结","机遇指向"]},
+
+{ id:"A-141", prototype:"鬼市商人（都市传说类）", source:"现代都市传说", tags:["交易代价","禁货置换","秘密账本","灵币交换"]},
+{ id:"A-142", prototype:"录音带诅咒（媒介怪谈）", source:"现代都市恐怖", tags:["声音留痕","记忆侵染","重复放送","媒介感染"]},
+{ id:"A-143", prototype:"深夜电梯（维度仪式）", source:"城市传说", tags:["层间错位","楼宇替换","按钮仪式","门后世界"]},
+{ id:"A-144", prototype:"失落图书馆（地点实体）", source:"传说与幻想文学", tags:["知识迷宫","书中实体化","检索诅咒","阅览通行证"]},
+{ id:"A-145", prototype:"夜行银狐（民俗精灵）", source:"东亚民间传说变体", tags:["魅影幻行","狐狸契约","幻觉诱导","变形伪装"]},
+
+{ id:"A-146", prototype:"医学奇迹（个案泛称）", source:"近代纪实与传说化", tags:["痊愈传说","病体逆转","生理激活","希望传导"]},
+{ id:"A-147", prototype:"炼金大师（概念原型）", source:"炼金传统与传说", tags:["物质转化","金属重塑","灵药萃取","代价等价"]},
+{ id:"A-148", prototype:"时间旅者（文学概念）", source:"科幻与民间想象", tags:["短时回溯","时间裂隙","记忆残影","命途修剪"]},
+{ id:"A-149", prototype:"梦魇骑士（噩梦化身）", source:"梦境民俗与恐怖传说", tags:["梦中狩猎","睡眠掠夺","恐惧具象","噩梦转移"]},
+{ id:"A-150", prototype:"守夜人（城市守护神话）", source:"地方传说/象征", tags:["黑夜巡守","暗影侦查","守望祈愿","小镇庇护"]},
+{id:"A-101", prototype:"普罗米修斯", source:"希腊神话", tags:["火种赐予","违逆神权","智慧觉醒","永罚枷锁"]},
+{id:"A-102", prototype:"潘多拉", source:"希腊神话", tags:["禁盒开启","灾厄释放","残存希望","好奇诅咒"]},
+{id:"A-103", prototype:"赫卡忒", source:"希腊神话", tags:["月影咒语","十字路仪式","幽灵引航","暗术灌注"]},
+{id:"A-104", prototype:"喀戎", source:"希腊神话", tags:["医术宗师","不死痛觉","导师传承","自我牺牲"]},
+{id:"A-105", prototype:"卡珊德拉", source:"希腊神话", tags:["真实预言","绝对不信","命运孤绝","心智诅咒"]},
+
+{id:"A-106", prototype:"班西", source:"爱尔兰民间传说", tags:["死亡预哭","音波萦绕","精神侵蚀","宿命宣告"]},
+{id:"A-107", prototype:"达拉汉", source:"爱尔兰传说", tags:["无首夜骑","灵魂猎杀","漆黑驾御","恐惧具现"]},
+{id:"A-108", prototype:"巴巴雅嘎", source:"斯拉夫民间童话", tags:["林间诡术","古老药剂","陷阱智慧","变化小屋"]},
+{id:"A-109", prototype:"凯尔努诺斯", source:"凯尔特神话", tags:["野性觉醒","兽群呼应","丰饶主宰","自然律令"]},
+{id:"A-110", prototype:"莫瑞甘", source:"凯尔特战争女神", tags:["厄兆化乌","战场预示","灵魂摄取","杀意增幅"]},
+
+{id:"A-111", prototype:"马尔杜克", source:"巴比伦神话", tags:["混沌裁断","风雷统驭","创世意志","秩序重铸"]},
+{id:"A-112", prototype:"伊什塔尔", source:"美索不达米亚神话", tags:["爱欲操纵","战争煽动","情绪放大","权柄反噬"]},
+{id:"A-113", prototype:"提亚马特", source:"巴比伦神话", tags:["原初龙怒","灭世洪流","母性毁灭","深渊孳生"]},
+{id:"A-114", prototype:"恩奇都", source:"吉尔伽美什史诗", tags:["原野狂性","自然羁绊","友谊燃烧","生命献祭"]},
+{id:"A-115", prototype:"吉尔伽美什", source:"苏美尔史诗", tags:["王权压制","宝具群射","自信膨胀","神凡对决"]},
+
+{id:"A-116", prototype:"卡莉", source:"印度教神话", tags:["黑夜狂舞","时间斩切","鲜血献祭","死亡重生"]},
+{id:"A-117", prototype:"梵天", source:"印度教神话", tags:["造化宣言","世界书写","知识启源","因果编织"]},
+{id:"A-118", prototype:"毗湿奴", source:"印度教神话", tags:["化身降临","宇宙平衡","守护万象","轮回修正"]},
+{id:"A-119", prototype:"伽内什", source:"印度教神话", tags:["障碍移除","智慧祝福","机遇引导","好运赐福"]},
+{id:"A-120", prototype:"罗摩", source:"《罗摩衍那》", tags:["神弓射敌","圣王之誓","忠义信念","正义裁杀"]},
+
+{id:"A-121", prototype:"奎兹尔科亚特尔", source:"阿兹特克神话", tags:["羽蛇降世","文明启蒙","风暴翔临","星轨指引"]},
+{id:"A-122", prototype:"特斯卡特利波卡", source:"阿兹特克神话", tags:["暗镜诅咒","命运错乱","心理操纵","背叛诱发"]},
+{id:"A-123", prototype:"维察波特利", source:"阿兹特克神话", tags:["战祭仪式","烈日杀伐","鲜血增幅","军势统御"]},
+{id:"A-124", prototype:"伊察姆纳", source:"玛雅神话", tags:["天象解读","医术赐生","文明引导","知识灌注"]},
+{id:"A-125", prototype:"库库尔坎", source:"玛雅神话", tags:["风蛇显化","群风统御","气候干扰","信仰操控"]},
+
+{id:"A-126", prototype:"雷鸟", source:"北美原住民传说", tags:["雷霆双翼","暴风招引","天空制霸","图腾震慑"]},
+{id:"A-127", prototype:"安南西", source:"西非民间传说", tags:["诡计织网","故事窃取","心理愚弄","机巧生存"]},
+{id:"A-128", prototype:"玛米瓦塔", source:"西非沿海信仰", tags:["水魅引诱","贪欲交易","财富幻觉","灵波治愈"]},
+{id:"A-129", prototype:"奥贡", source:"约鲁巴神话", tags:["铁血锻造","战场掌控","兵器附魂","工业祝福"]},
+{id:"A-130", prototype:"阿努比斯", source:"埃及神话", tags:["灵魂称量","冥途指引","木乃伊仪式","死后裁定"]},
+
+{id:"A-131", prototype:"拉", source:"埃及神话", tags:["日轮焚照","圣光领域","王权威慑","昼界主宰"]},
+{id:"A-132", prototype:"赛特", source:"埃及神话", tags:["风沙混乱","谋算背叛","秩序破坏","暴力侵袭"]},
+{id:"A-133", prototype:"妮芙蒂斯", source:"埃及神话", tags:["黄昏庇护","死者安魂","隐秘哀悼","阴影引渡"]},
+{id:"A-134", prototype:"伊西斯", source:"埃及神话", tags:["复活仪式","母性疗愈","碎魂重组","王权祝圣"]},
+{id:"A-135", prototype:"荷鲁斯", source:"埃及神话", tags:["鹰眼鎖定","天空俯冲","神战复仇","护国誓言"]},
+
+{id:"A-136", prototype:"浮士德", source:"哥德传说", tags:["魔契交易","灵魂典当","知识换权","代价失控"]},
+{id:"A-137", prototype:"梅菲斯特", source:"浮士德传说", tags:["恶魔引诱","心灵操纵","幻象承诺","契约监控"]},
+{id:"A-138", prototype:"德古拉", source:"吸血鬼文学原型", tags:["血液再生","夜行化身","魅惑操纵","蝠兽变形"]},
+{id:"A-139", prototype:"范海辛", source:"欧洲猎魔传说", tags:["弱点解析","圣器制猎","持续追踪","怪物净除"]},
+{id:"A-140", prototype:"科学怪人之怪物", source:"玛丽雪莱小说", tags:["拼接战躯","电能复苏","痛觉缺失","孤独暴走"]},
+
+{id:"A-141", prototype:"无头骑士", source:"《断头谷传奇》", tags:["幽骑冲锋","斩首制裁","恐惧驱动","不死追猎"]},
+{id:"A-142", prototype:"睡魔桑德曼", source:"欧洲民俗", tags:["梦境编织","强制入眠","意识出神","幻象循环"]},
+{id:"A-143", prototype:"泥偶", source:"犹太传说", tags:["咒文赋生","指令执行","土躯防御","能量转移"]},
+{id:"A-144", prototype:"塞壬", source:"希腊海妖传说", tags:["歌声诱惑","航路迷失","精神蛊惑","溺海献祭"]},
+{id:"A-145", prototype:"芬里尔", source:"北欧神话", tags:["锁链挣脱","野性暴走","终焉追猎","毁神巨力"]},
+
+{id:"A-146", prototype:"尼德霍格", source:"北欧神话", tags:["腐蚀根脉","吞噬记忆","深渊怒啸","终末渗透"]},
+{id:"A-147", prototype:"耶梦加得", source:"北欧神话", tags:["毒海环世","领域束缚","剧毒喷吐","灾厄觉醒"]},
+{id:"A-148", prototype:"凤凰", source:"泛神话象征", tags:["灰烬重生","烈焰净化","不死轮回","焚身再起"]},
+{id:"A-149", prototype:"巴哈姆特", source:"阿拉伯/后世神话", tags:["创世维护","星空咆哮","巨龙威权","世界支柱"]},
+{id:"A-150", prototype:"拉罗娜", source:"墨西哥供水女鬼传说", tags:["哀嚎侵心","水域显灵","执念追逐","孩童诅咒"]},
+
+{id:"A-151", prototype:"皮克特女巫凯萨琳", source:"苏格兰民间传说", tags:["血誓巫术","命契折磨","占灾占兆","契灵驱役"]},
+{id:"A-152", prototype:"红衣男孩", source:"现代亚洲都市传说", tags:["镜后显影","儿童诱捕","精神错乱","短促惊现"]},
+{id:"A-153", prototype:"哭泣天使", source:"科幻媒体传说化", tags:["凝视锁定","石像瞬移","时间吞噬","注视制裁"]},
+{id:"A-154", prototype:"黑狗幽魂", source:"欧洲乡野怪谈", tags:["死亡预兆","夜游追魂","低吼致惊","道路封锁"]},
+{id:"A-155", prototype:"钩子人", source:"美国都市怪谈", tags:["车旁突袭","肢体收割","夜路恐惧","目标执着"]},
+
+{id:"A-156", prototype:"裂口女", source:"日本都市传说", tags:["致命询问","心理博弈","利刃审判","童域恐吓"]},
+{id:"A-157", prototype:"八尺大人", source:"日本怪谈", tags:["拟声引诱","身影迫近","压迫恐惧","猎童执念"]},
+{id:"A-158", prototype:"梅杜莎", source:"希腊神话", tags:["石化凝视","蛇发撕咬","诅咒遗种","孤绝威慑"]},
+{id:"A-159", prototype:"卡律布狄斯", source:"希腊神话", tags:["深渊吞噬","水流牵吸","空间塌缩","海域封杀"]},
+{id:"A-160", prototype:"斯库拉", source:"希腊神话", tags:["多头猎杀","峡湾封锁","血祭仪式","灾兽领域"]},
+
+{id:"A-161", prototype:"罗兰", source:"《罗兰之歌》", tags:["圣剑奋战","殉国呼号","号角增幅","最后突击"]},
+{id:"A-162", prototype:"齐格弗里德", source:"《尼伯龙根之歌》", tags:["屠龙免疫","宝藏诅咒","英雄刚体","宿命陷落"]},
+{id:"A-163", prototype:"布伦希尔德", source:"北欧史诗", tags:["战女狂势","烈焰隔绝","誓约守护","宿命爱情"]},
+{id:"A-164", prototype:"罗宾汉", source:"英国传奇", tags:["精准狙射","游击袭扰","富者劫掠","隐秘转移"]},
+{id:"A-165", prototype:"黑胡子", source:"海盗历史传说", tags:["火雷威慑","舰队统率","恐吓战法","掠夺支配"]},
+
+{id:"A-166", prototype:"贞德", source:"法国圣女史迹", tags:["圣焰加护","信仰共鸣","士气燃点","殉道激励"]},
+{id:"A-167", prototype:"哥伦布", source:"历史人物神话化", tags:["未知航路","地图启示","风险博弈","时代转折"]},
+{id:"A-168", prototype:"瓦伦丁博士", source:"医学都市怪谈", tags:["器官窃取","手术迷离","假面仁心","暗夜操作"]},
+{id:"A-169", prototype:"蓝胡子", source:"欧洲童话", tags:["禁室诱杀","婚誓陷阱","好奇致死","血迹暴露"]},
+{id:"A-170", prototype:"睡美人", source:"格林童话", tags:["沉眠领域","觉醒爆发","诅咒扩散","时间凝滞"]},
+
+{id:"A-171", prototype:"糖果屋女巫", source:"格林童话", tags:["甜诱陷阱","童心迷控","暗炉裁杀","诱杀工坊"]},
+{id:"A-172", prototype:"彼得潘", source:"詹姆斯·巴里童话", tags:["飞行滑行","拒绝成长","幻想塑境","童心增幅"]},
+{id:"A-173", prototype:"匹诺曹", source:"意大利童话", tags:["谎言共振","木体变化","自律试炼","真实苏醒"]},
+{id:"A-174", prototype:"白雪公主", source:"格林童话", tags:["毒果侵体","灵眠封印","纯真祝福","复苏奇迹"]},
+{id:"A-175", prototype:"爱丽丝", source:"《爱丽丝梦游仙境》", tags:["认知错位","梦境跳跃","大小操纵","逻辑逆转"]},
+
+{id:"A-176", prototype:"拉普拉斯", source:"科学史人物神话化", tags:["概率洞察","未来演算","因果压缩","决定论映射"]},
+{id:"A-177", prototype:"牛顿", source:"历史人物神话化", tags:["引力统摄","法则显影","绝对计算","天象解析"]},
+{id:"A-178", prototype:"达尔文", source:"历史人物神话化", tags:["物种洞察","自然选择","观察积累","理论启示"]},
+{id:"A-179", prototype:"爱因斯坦", source:"历史人物神话化", tags:["时空直觉","相对扭曲","思维悖论","光速界限"]},
+{id:"A-180", prototype:"居里夫人", source:"历史人物神话化", tags:["辐射觉醒","元素萃取","隐性风险","献身科研"]},
+
+{id:"A-181", prototype:"开膛手杰克", source:"伦敦白教堂案件", tags:["暗巷奇袭","精准剖杀","恐惧蔓延","身份无影"]},
+{id:"A-182", prototype:"血腥玛丽", source:"镜中怪谈", tags:["通灵映像","精神反噬","自我映现","召唤仪式"]},
+{id:"A-183", prototype:"斯兰德曼", source:"网络怪谈", tags:["影域潜行","精神污染","非现实步移","观察压迫"]},
+{id:"A-184", prototype:"厕所花子", source:"校园怪谈", tags:["门域回声","召应显现","空间偏移","童稚执念"]},
+{id:"A-185", prototype:"微笑男人", source:"现代都市怪谈", tags:["尾随恐惧","凝视崩溃","心理施压","不自然微笑"]},
+
+{id:"A-186", prototype:"潘尼怀斯", source:"《小丑回魂》", tags:["恐惧塑形","精神掠食","幻化多形","周期狩猎"]},
+{id:"A-187", prototype:"绿衣骑士", source:"亚瑟传说", tags:["不死挑战","试炼裁判","荣誉考验","宿命契约"]},
+{id:"A-188", prototype:"兰斯洛特", source:"圆桌传说", tags:["极限剑术","誓约冲突","激情驱战","孤英雄主义"]},
+{id:"A-189", prototype:"梅林", source:"亚瑟传奇", tags:["未来洞察","混沌布局","命运误导","法阵织构"]},
+{id:"A-190", prototype:"亚瑟王", source:"不列颠传说", tags:["王权领域","圣剑召唤","誓骑统合","秩序具现"]},
+
+{id:"A-191", prototype:"莉莉丝", source:"犹太神话", tags:["夜魔诱惑","拒绝支配","自由诅咒","婴魂掠夺"]},
+{id:"A-192", prototype:"别西卜", source:"所罗门魔典", tags:["瘟疫之王","腐化散播","飞蝇化身","支配低级恶魔"]},
+{id:"A-193", prototype:"阿斯莫德", source:"七宗罪传说", tags:["欲望灌注","心智腐蚀","情欲操演","意志侵袭"]},
+{id:"A-194", prototype:"巴力", source:"所罗门恶魔学", tags:["雷云役使","远见操控","军团统帅","献祭回应"]},
+{id:"A-195", prototype:"路西法", source:"圣经神话", tags:["堕落晨星","反叛之光","傲慢显化","诱惑誓言"]},
+
+{id:"A-196", prototype:"守夜人", source:"都市民俗", tags:["夜巡守望","影中侦察","低光感知","庇护小镇"]},
+{id:"A-197", prototype:"裂口女", source:"日本怪谈", tags:["致命提问","心理压迫","刀锋审判","童域惊惧"]},
+{id:"A-198", prototype:"清姬", source:"日本民间传说", tags:["执念化蛇","爱欲焚烧","追魂复仇","诅咒转生"]},
+{id:"A-199", prototype:"雪女", source:"日本妖怪传说", tags:["寒息冻结","生命抽离","绝情美感","雪境迷途"]},
+{id:"A-200", prototype:"鬼童丸", source:"日本妖怪传说", tags:["童鬼狂性","裂爪搏杀","凶魂寄生","野性支配"]},
+{id:"A-201", prototype:"赫尔", source:"北欧神话", tags:["亡者统治","寒界律令","灵魂冷视"]},
+{id:"A-202", prototype:"海姆达尔", source:"北欧神话", tags:["极限感知","界桥守望","天听洞察"]},
+{id:"A-203", prototype:"布伦希尔", source:"瓦尔基里传说", tags:["战死引渡","荣誉裁定","神枪突刺"]},
+{id:"A-204", prototype:"霍德尔", source:"北欧神话", tags:["盲目神射","误杀宿命","寂静憎恨"]},
+{id:"A-205", prototype:"斯卡蒂", source:"北欧神话", tags:["极寒狩猎","雪域疾行","弓术猎杀号角"]},
+
+{id:"A-206", prototype:"厄里斯", source:"希腊神话", tags:["纷争散播","阵营撕裂","偶发混乱"]},
+{id:"A-207", prototype:"帕里斯", source:"特洛伊史诗", tags:["抉择诱灾","神性偏袒","情欲引战"]},
+{id:"A-208", prototype:"海伦", source:"希腊史诗", tags:["魅性牵引","纷争焦点","美貌诅咒"]},
+{id:"A-209", prototype:"阿塔兰忒", source:"希腊神话", tags:["极限奔袭","猎杀精准","速度赌约"]},
+{id:"A-210", prototype:"俄耳甫斯", source:"希腊神话", tags:["音乐通魂","冥府回衡","情感共振"]},
+
+{id:"A-211", prototype:"托特", source:"埃及神话", tags:["文字具现","法则记录","真理监察"]},
+{id:"A-212", prototype:"索贝克", source:"埃及神话", tags:["沼泽猎杀","凶暴驱咬","危域统治"]},
+{id:"A-213", prototype:"巴斯特", source:"埃及神话", tags:["猫化身","幸灾察觉","趋避抉择"]},
+{id:"A-214", prototype:"阿蒙", source:"埃及神话", tags:["隐秘权柄","气流神性","无形压迫"]},
+{id:"A-215", prototype:"孔苏", source:"埃及神话", tags:["月律操盘","梦游侵蚀","精神标定"]},
+
+{id:"A-216", prototype:"摩西", source:"圣经旧约", tags:["神迹分海","律法书写","信众动员"]},
+{id:"A-217", prototype:"所罗门", source:"圣经旧约", tags:["精怪使役","真名掌控","权戒调令"]},
+{id:"A-218", prototype:"大卫", source:"圣经旧约", tags:["精准投石","越阶斩首","神选强化"]},
+{id:"A-219", prototype:"诺亚", source:"圣经启示", tags:["灭世幸存","载命封存","末日共存"]},
+{id:"A-220", prototype:"参孙", source:"圣经传说", tags:["神力爆发","发誓绑定","自毁式杀戮"]},
+
+{id:"A-221", prototype:"哈姆雷特", source:"莎士比亚悲剧", tags:["精神犹豫","复仇延宕","意识过载"]},
+{id:"A-222", prototype:"麦克白", source:"莎士比亚", tags:["预言驱动","血腥野心","幻觉斩决"]},
+{id:"A-223", prototype:"奥赛罗", source:"莎士比亚", tags:["信任腐蚀","嫉妒极化","误杀冲动"]},
+{id:"A-224", prototype:"李尔王", source:"莎士比亚", tags:["权位放弃","亲情反噬","精神崩塌"]},
+{id:"A-225", prototype:"罗密欧", source:"莎士比亚", tags:["激情决斗","殉情共振","绝恋牵引"]},
+
+{id:"A-226", prototype:"俾斯麦", source:"德国历史", tags:["权谋布局","联盟操控","政治铁腕"]},
+{id:"A-227", prototype:"凯撒", source:"古罗马史", tags:["公权威压","军团动员","背叛预知"]},
+{id:"A-228", prototype:"拿破仑", source:"法国历史", tags:["军略闪击","领袖号召","战场执念"]},
+{id:"A-229", prototype:"汉尼拔", source:"迦太基史", tags:["奇袭机动","寒域跨征","心理压迫"]},
+{id:"A-230", prototype:"亚历山大", source:"马其顿史", tags:["扩张狂热","勇气辐射","史诗驱军"]},
+
+{id:"A-231", prototype:"钟馗", source:"中国民俗", tags:["恶鬼猎杀号","正气镇压","符令裁杀"]},
+{id:"A-232", prototype:"黑白无常", source:"中国冥司信仰", tags:["灵魂拘引","生死宣判","阴阳两极"]},
+{id:"A-233", prototype:"牛魔王", source:"《西游记》", tags:["狂化冲锋","妖力护体","族群号令"]},
+{id:"A-234", prototype:"白骨精", source:"《西游记》", tags:["多形变化","欺诈接近","献计反噬"]},
+{id:"A-235", prototype:"铁扇公主", source:"《西游记》", tags:["风势支配","扇击控场","极端执念"]},
+
+{id:"A-236", prototype:"聂小倩", source:"《聊斋》", tags:["幽恋缠魂","灵线牵引","化怨成术"]},
+{id:"A-237", prototype:"画皮女", source:"《聊斋》", tags:["人皮拟态","身份窃取","魅惑欺诈"]},
+{id:"A-238", prototype:"钟旭", source:"古代怪谈", tags:["疯狂武斗","邪秽驱逐","狂士怒斩"]},
+{id:"A-239", prototype:"陈铁君", source:"清末血尸传说", tags:["尸驱护体","强直冲锋","嗜血反扑"]},
+{id:"A-240", prototype:"苏曼姝", source:"近代奇谈", tags:["诗魂幻境","感性过载","精神燃尽"]},
+
+{id:"A-241", prototype:"夏洛克·福尔摩斯", source:"柯南·道尔作品", tags:["线索洞察","推理打击","伪装潜伏"]},
+{id:"A-242", prototype:"莫里亚蒂教授", source:"福尔摩斯系列", tags:["智谋压制","幕后操局","犯罪网络"]},
+{id:"A-243", prototype:"阿尔忒弥斯", source:"希腊神话", tags:["月猎精准","野性盟约","弓影连杀"]},
+{id:"A-244", prototype:"赫尔墨斯", source:"希腊神话", tags:["高速位移","信息窃流","灵魂引路"]},
+{id:"A-245", prototype:"狄奥尼索斯", source:"希腊神话", tags:["狂宴引爆","理智崩散","生命感官放大"]},
+
+{id:"A-246", prototype:"克苏鲁", source:"洛夫克拉夫特神话", tags:["深海侵梦","不可名状","精神污染"]},
+{id:"A-247", prototype:"奈亚拉托提普", source:"克苏鲁神话", tags:["千面扮演","诱导崩坏","混沌使者"]},
+{id:"A-248", prototype:"尤格索托斯", source:"克苏鲁神话", tags:["时空渗透","全界观测","禁忌知识"]},
+{id:"A-249", prototype:"阿撒托斯", source:"克苏鲁神话", tags:["原初混沌","无意识辐射","破界回荡"]},
+{id:"A-250", prototype:"黄衣之王", source:"哈斯塔传说", tags:["戏剧感召","精神感染","现实扭译"]},
+
+{id:"A-251", prototype:"网中人", source:"日韩都市传说", tags:["网络窥视","身份渗透","信息潜伏"]},
+{id:"A-252", prototype:"隧道女", source:"日本怪谈", tags:["黑暗引诱","地道追逐","反向空间移动"]},
+{id:"A-253", prototype:"红鞋女孩", source:"欧美怪谈", tags:["舞步诅咒","行动强制","死亡轮舞"]},
+{id:"A-254", prototype:"窗外小孩", source:"亚洲都市怪谈", tags:["突现凝视","窥探压迫","童影悬疑"]},
+{id:"A-255", prototype:"敲门人", source:"美洲怪谈", tags:["门律触发","仪式召现","回避生死"]},
+
+{id:"A-256", prototype:"钟楼怪人", source:"雨果小说", tags:["钟声震荡","恐惧注视","悲剧抗争"]},
+{id:"A-257", prototype:"斯芬克斯", source:"希腊神话", tags:["谜题强制","失败即死","知识审判"]},
+{id:"A-258", prototype:"小红帽", source:"童话", tags:["森林诱遇","危险直觉","天真反噬"]},
+{id:"A-259", prototype:"穿靴子的猫", source:"童话", tags:["话术欺骗","机巧突围","随机援护"]},
+{id:"A-260", prototype:"灰姑娘", source:"童话", tags:["阶层跃迁","限时祝福","命运转向"]},
+
+{id:"A-261", prototype:"兰博", source:"现代小说影视", tags:["孤胆战斗","环境掌控","杀意潜伏"]},
+{id:"A-262", prototype:"德州电锯杀人狂", source:"都市恐怖传说化", tags:["锯裂追猎","狂性暴走","服饰恐吓"]},
+{id:"A-263", prototype:"弗莱迪", source:"《猛鬼街》", tags:["梦境伏杀","恐惧转能","不可醒回"]},
+{id:"A-264", prototype:"贞子", source:"日本影视怪谈", tags:["录像诅咒","怨影显现","死亡倒计"]},
+{id:"A-265", prototype:"伽椰子", source:"日本影视怪谈", tags:["家宅纠缠","怨念连锁","无解追杀"]},
+
+{id:"A-266", prototype:"影之指挥官柯南", source:"网络传说", tags:["潜影调兵","战术涌出","非正面支配"]},
+{id:"A-267", prototype:"福尔曼医生", source:"医学怪谈", tags:["自律绝对","毒药计算","医疗操盘"]},
+{id:"A-268", prototype:"无面男", source:"都市传说", tags:["身份抹消","面对空白","望之失控"]},
+{id:"A-269", prototype:"长发幽影", source:"东南亚怪谈", tags:["发丝绞杀","天花显形","暗夜突袭"]},
+{id:"A-270", prototype:"剪刀女", source:"日本怪谈", tags:["双刃逼问","审美评断","拒答即死"]},
+
+{id:"A-271", prototype:"鲁迅", source:"中国近代文学", tags:["精神剖析","社会觉醒","意志点燃"]},
+{id:"A-272", prototype:"李白", source:"唐代诗史", tags:["诗气纵横","酒意增幅","即兴造势"]},
+{id:"A-273", prototype:"杜甫", source:"唐代史诗", tags:["悲悯祝福","群体加持","精神补给"]},
+{id:"A-274", prototype:"苏轼", source:"宋代文豪", tags:["心境调衡","才情变通","逆境转化"]},
+{id:"A-275", prototype:"辛弃疾", source:"宋代将词", tags:["豪情增伤","词令激发","气魄冲阵"]},
+
+{id:"A-276", prototype:"本杰明·富兰克林", source:"历史人物", tags:["雷电实验","创造点燃","民智唤醒"]},
+{id:"A-277", prototype:"尼古拉·特斯拉", source:"历史人物", tags:["能量激荡","共振武化","无线领域"]},
+{id:"A-278", prototype:"托马斯·爱迪生", source:"历史人物", tags:["持续发明","效率改造","技术垄断"]},
+{id:"A-279", prototype:"艾伦·图灵", source:"历史人物", tags:["算法直觉","破译强化","机魂启示"]},
+{id:"A-280", prototype:"达·芬奇", source:"文艺复兴", tags:["跨界灵感","战械构思","瞬绘创造"]},
+
+{id:"A-281", prototype:"白鲸莫比迪克", source:"梅尔维尔小说", tags:["狂兽冲撞","海域统治","复仇象征"]},
+{id:"A-282", prototype:"尼摩船长", source:"凡尔纳小说", tags:["深潜作战","科技压制","反文明宣言"]},
+{id:"A-283", prototype:"唐吉诃德", source:"塞万提斯小说", tags:["幻想抗争","徒手冲锋","理想燃烧"]},
+{id:"A-284", prototype:"基督山伯爵", source:"大仲马小说", tags:["极致复仇","身份布局","财富压制"]},
+{id:"A-285", prototype:"绿野仙踪稻草人", source:"童话", tags:["思维模拟","自我觉醒","无智转慧"]},
+
+{id:"A-286", prototype:"虎姬", source:"南方民俗", tags:["兽化疾冲","猛袭压制","原始觉醒"]},
+{id:"A-287", prototype:"山童", source:"日本怪谈", tags:["林间戏弄","视线干扰","古灵恶作"]},
+{id:"A-288", prototype:"河童", source:"日本妖怪", tags:["水中格斗","力量夺取","相扑禁术"]},
+{id:"A-289", prototype:"犬夜叉", source:"现代妖怪英雄传说", tags:["妖剑怒放","半妖韧性","血脉觉醒"]},
+{id:"A-290", prototype:"杀生丸", source:"现代传说演绎", tags:["王族威压","治愈妖剑","冷酷裁决"]},
+
+{id:"A-291", prototype:"猎魔人杰洛特", source:"波兰奇幻小说", tags:["药剂强化","剑术专精","怪物知觉"]},
+{id:"A-292", prototype:"贝奥武甫", source:"盎格鲁史诗", tags:["徒手屠魔","英雄硬撼","死战意志"]},
+{id:"A-293", prototype:"孔雀明王", source:"密宗佛教", tags:["降伏火焰","毒厄转化","六臂镇煞"]},
+{id:"A-294", prototype:"毗沙门天", source:"佛教神祇", tags:["财福护佑","战意增幅","北界守护"]},
+{id:"A-295", prototype:"不动明王", source:"日本密教", tags:["怒相威慑","业火净化","誓愿镇心"]},
+
+{id:"A-296", prototype:"猫又", source:"日本妖怪", tags:["分身恶作","幻火扰敌","怪谈散播"]},
+{id:"A-297", prototype:"濡女", source:"日本民俗", tags:["水边诱捕","柔弱伪装","突发绞杀"]},
+{id:"A-298", prototype:"雪女郎", source:"东北怪谈", tags:["严寒吐息","美色冻结","孤冥徘徊"]},
+{id:"A-299", prototype:"灯笼鬼", source:"日本怪谈", tags:["夜灯诱路","鬼火操纵","幻觉迷踪"]},
+{id:"A-300", prototype:"山姥", source:"日本民俗", tags:["老妇伪装","食人猎杀","山境主场"]},
+{ id:"A-301", prototype:"埃雷什基伽勒 (Ereshkigal)", source:"美索不达米亚神话", tags:["冥域统御","阴间封锁","亡魂裁判"]},
+{ id:"A-302", prototype:"涅尔伽尔 (Nergal)", source:"美索不达米亚神话", tags:["战争与瘟疫","火与疫病","地狱门卫"]},
+{ id:"A-303", prototype:"恩利尔 (Enlil)", source:"美索不达米亚神话", tags:["风暴主宰","命令降临","领域裁决"]},
+{ id:"A-304", prototype:"洪巴巴 (Humbaba)", source:"吉尔伽美什史诗", tags:["林间守护","野性之眼","树根束缚"]},
+{ id:"A-305", prototype:"斯卡哈/斯卡哈（Scáthach）", source:"凯尔特传说", tags:["战术传授","影刺技艺","悍将导师"]},
+
+{ id:"A-306", prototype:"布兰（Bran the Blessed）", source:"威尔士/玛比诺吉翁", tags:["巨视之力","渡海守护","古树牺牲"]},
+{ id:"A-307", prototype:"米米尔（Mímir）", source:"北欧神话", tags:["智慧之泉","记忆守护","牺牲换知"]},
+{ id:"A-308", prototype:"斯雷普尼尔（Sleipnir）", source:"北欧神话", tags:["八足速行","界域跨越","幽影马嘶"]},
+{ id:"A-309", prototype:"伊米尔（Ymir）", source:"北欧创世神话", tags:["原初巨体","溶界震荡","骨化山河"]},
+{ id:"A-310", prototype:"弗雷（Freyr）", source:"北欧神话", tags:["丰饶赐福","和约调和","生长脉动"]},
+
+{ id:"A-311", prototype:"佩莱（Pele）", source:"夏威夷神话", tags:["火山怒放","熔岩塑世","火光祭祀"]},
+{ id:"A-312", prototype:"唐加罗亚（Tangaroa）", source:"毛利/波利尼西亚神话", tags:["海域掌权","漩涡召唤","渔民守护"]},
+{ id:"A-313", prototype:"库（Ku）", source:"夏威夷/波利尼西亚信仰", tags:["战意激发","祭器祈令","刀锋附体"]},
+{ id:"A-314", prototype:"奥洛昆（Olokun）", source:"约鲁巴/非洲海神信仰", tags:["深海秘藏","记忆沉淀","财富暗涌"]},
+{ id:"A-315", prototype:"埃西乌（Eshu）/Elegba", source:"约鲁巴信仰", tags:["道路分岔","诡计引导","交流开关"]},
+
+{ id:"A-316", prototype:"奥尚（Oshun）", source:"约鲁巴与非洲信仰", tags:["甘泉魅力","爱与财富","治愈仪式"]},
+{ id:"A-317", prototype:"耶莫佳（Yemoja）", source:"约鲁巴/加勒比信仰", tags:["母性潮流","护航之波","海产守护"]},
+{ id:"A-318", prototype:"屈原/Qu Yuan", source:"中国史诗/楚辞", tags:["忧国咏叹","诗歌诅咒","江河献祭"]},
+{ id:"A-319", prototype:"武则天 (Wu Zetian)", source:"中国历史", tags:["权位操控","诏令显化","女皇威摄"]},
+{ id:"A-320", prototype:"关羽 (Guan Yu)", source:"三国历史/民间神祇", tags:["义勇护卫","青龙偃月刀","忠义共振"]},
+
+{ id:"A-321", prototype:"诸葛亮 (Zhuge Liang)", source:"三国/历史传说", tags:["星阵布置","空城计术","木牛流马（标签示例）"]},
+{ id:"A-322", prototype:"伊邪那岐 (Izanagi)", source:"日本神话", tags:["生灵分割","黄泉御返","生成与隔离"]},
+{ id:"A-323", prototype:"辉夜姬 (Kaguya-hime)", source:"竹取物语", tags:["月光掠影","不死之秘","光华诱惑"]},
+{ id:"A-324", prototype:"欧亚（Oya）", source:"约鲁巴风暴女神", tags:["飓风召动","墓地通道","火与雷混合"]},
+{ id:"A-325", prototype:"赫斯提亚 (Hestia)", source:"希腊神话", tags:["炉火守护","家庭祝福","静默守望"]},
+
+{ id:"A-326", prototype:"得墨忒耳 (Demeter)", source:"希腊神话", tags:["丰饶循环","收获诅约","农田守护"]},
+{ id:"A-327", prototype:"克洛诺斯 (Cronus)", source:"希腊神话（泰坦）", tags:["时间压裂","世代替换","父权碾压"]},
+{ id:"A-328", prototype:"阿特拉斯 (Atlas)", source:"希腊神话", tags:["承天负地","筋骨支撑","不屈耐载"]},
+{ id:"A-329", prototype:"赫利俄斯 (Helios)", source:"希腊神话/日神", tags:["日轮放射","光之律令","太阳行迹"]},
+{ id:"A-330", prototype:"涅墨西斯 (Nemesis)", source:"希腊神话", tags:["报应之手","平衡裁决","嫉妒惩罚"]},
+
+{ id:"A-331", prototype:"塔纳托斯 (Thanatos)", source:"希腊神话", tags:["平静死别","必然终结","影之牵引"]},
+{ id:"A-332", prototype:"休普諾斯 (Hypnos)", source:"希腊神话", tags:["睡眠笼罩","梦门开启","半醒半眠"]},
+{ id:"A-333", prototype:"摩耳甫斯 (Morpheus)", source:"希腊梦神", tags:["梦形塑造","异象编织","潜意识操控"]},
+{ id:"A-334", prototype:"萨拉斯瓦蒂 (Saraswati)", source:"印度教", tags:["音韵启迪","知识指引","文艺化身"]},
+{ id:"A-335", prototype:"拉克希米 (Lakshmi)", source:"印度教", tags:["财富眷顾","好运洗礼","魅力鼓舞"]},
+
+{ id:"A-336", prototype:"帕尔瓦蒂 (Parvati)", source:"印度教", tags:["温柔坚韧","母性守护","灵力孕育"]},
+{ id:"A-337", prototype:"杜尔迦 (Durga)", source:"印度教", tags:["战阵化身","众神助阵","狮骑猛攻"]},
+{ id:"A-338", prototype:"牛头怪（Minotaur）", source:"克里特传说", tags:["迷宫猎杀","撕裂冲撞","牛首震怒"]},
+{ id:"A-339", prototype:"忒修斯 (Theseus)", source:"希腊英雄传说", tags:["迷宫破解","王者之剑","勇者智刃"]},
+{ id:"A-340", prototype:"伊卡洛斯 (Icarus)", source:"希腊神话", tags:["高飞试探","蜡翼坠落","欲望代价"]},
+
+{ id:"A-341", prototype:"代达罗斯 (Daedalus)", source:"希腊神话", tags:["巧匠构策","机关造物","逃逸巧思"]},
+{ id:"A-342", prototype:"布拉吉 (Bragi)", source:"北欧神话", tags:["诗歌言咒","吟唱激发","灵感流淌"]},
+{ id:"A-343", prototype:"美狄亚 (Medea)", source:"希腊悲剧/神话", tags:["毒药与炼术","复仇之智","魔法草药"]},
+{ id:"A-344", prototype:"伊阿宋 (Jason)", source:"金羊毛传说", tags:["寻宝号令","船队凝聚","盟誓驱动"]},
+{ id:"A-345", prototype:"贝奥武夫(BEOWULF)", source:"盎格鲁-撒克逊史诗", tags:["怪物屠戮","英魂不灭","史诗之力"]},
+
+{ id:"A-346", prototype:"拉·贝法娜 (La Befana)", source:"意大利民间", tags:["扫帚夜游","馈赠与惩戒","节日诡谲"]},
+{ id:"A-347", prototype:"克兰普斯 (Krampus)", source:"中欧民俗", tags:["冬节鞭笞","恐惧惩戒","孩童记忆"]},
+{ id:"A-348", prototype:"年兽 (Nian)", source:"中国年节传说", tags:["年末咆哮","爆竹畏惧","门神召守"]},
+{ id:"A-349", prototype:"僵尸 (Jiangshi)", source:"中国民间传说", tags:["跳尸冲撞","阳气吸取","缠绕不灭"]},
+{ id:"A-350", prototype:"轆轤首 (Rokurokubi)", source:"日本妖怪", tags:["颈长幻形","夜行窥探","惊悚颈舞"]},
+
+{ id:"A-351", prototype:"维拉可查 (Viracocha)", source:"印加神话", tags:["天之创造","远古律令","文明印刻"]},
+{ id:"A-352", prototype:"因蒂 (Inti)", source:"印加太阳信仰", tags:["太阳祝福","丰年之光","王权象征"]},
+{ id:"A-353", prototype:"帕查玛玛 (Pachamama)", source:"安第斯民俗", tags:["大地母亲","收成守护","地脉回响"]},
+{ id:"A-354", prototype:"纳纳博佐 (Nanabozho)", source:"奥吉布瓦/北美民俗", tags:["诡计与教训","自然教化","动物盟友"]},
+{ id:"A-355", prototype:"温迪戈 (Wendigo)", source:"阿尔冈昆传说", tags:["饥渴变形","贪婪吞噬","冬林徘徊"]},
+
+{ id:"A-356", prototype:"赛德纳 (Sedna)", source:"因纽特神话", tags:["海底女王","鱼群指令","寒海诅咒"]},
+{ id:"A-357", prototype:"阿普萨拉 (Apsara)", source:"印度/东南亚神话", tags:["舞姿迷魂","流水魅影","观赏换礼"]},
+{ id:"A-358", prototype:"罗摩 (Ravana 对立体)", source:"印度史诗（罗摩衍那相关）", tags:["王族霸气","十首之力","魔法武备"]},
+{ id:"A-359", prototype:"哈努曼 (Hanuman)", source:"印度史诗", tags:["巨力跳跃","忠诚守护","筋骨不灭"]},
+{ id:"A-360", prototype:"因陀罗 (Indra)", source:"印度教/吠陀神话", tags:["雷电风暴","神战之盾","天空权柄"]},
+
+{ id:"A-361", prototype:"阿格尼 (Agni)", source:"吠陀/印度教", tags:["圣火启动","祭台通道","能量燃祭"]},
+{ id:"A-362", prototype:"瓦尔纳 (Varuna)", source:"吠陀神话", tags:["海域律令","天体秩序","水律制衡"]},
+{ id:"A-363", prototype:"泰克里斯 (Tezcatlipoca 已变体避开重名)", source:"中美洲神祇变体提示", tags:["暗镜回响","试炼之影","命数更改"]},
+{ id:"A-364", prototype:"伊斯塔尔/伊什塔尔（变名区分不重复）", source:"美索不达米亚/阿摩利", tags:["爱欲与怒","王权诱发","战争引燃"]},
+{ id:"A-365", prototype:"阿努 (Anu 有变体慎用)", source:"美索不达米亚", tags:["天域裁判","王位指示","古神印章"]},
+
+{ id:"A-366", prototype:"伊纳娜 (Inanna)", source:"苏美尔神话", tags:["冥界试炼","爱与权力","王冠诱导"]},
+{ id:"A-367", prototype:"古巴 (Cú Chulainn 已用过于早,改为布鲁纳)", source:"凯尔特变体（Brú na Bóinne 相关）", tags:["史诗怒吼","战争仪式","英雄印记"]},
+{ id:"A-368", prototype:"斯凯尔（Skadi）", source:"北欧神话", tags:["猎弓凛冽","雪域之怒","寒地诅咒"]},
+{ id:"A-369", prototype:"芬（Fionn mac Cumhaill）", source:"爱尔兰传说", tags:["巨人之力","猎人直觉","传承符印"]},
+{ id:"A-370", prototype:"蒂塔尼娅 (Titania)", source:"《仲夏夜之梦》/民俗", tags:["妖精女王","梦境魅力","自然调和"]},
+
+{ id:"A-371", prototype:"潘 (Pan)", source:"希腊神话", tags:["狂野号角","恐慌诱发","自然咆哮"]},
+{ id:"A-372", prototype:"塞壬长老（Siren Eld）", source:"航海传说变体", tags:["歌声引航","船难牵引","声波缠绕"]},
+{ id:"A-373", prototype:"海神尼瑞伊德（Nereid 泛海灵）", source:"希腊海洋传说", tags:["潮间庇护","浪花呼唤","航道祝福"]},
+{ id:"A-374", prototype:"玛嘉利塔修女（虚构古修）", source:"宗教民间化形象", tags:["祈祷守护","圣痕显现","献身庇佑"]},
+{ id:"A-375", prototype:"圣乔治 (St. George)", source:"基督教传说", tags:["龙猎祝福","骑士之勇","驯兽之斩"]},
+
+{ id:"A-376", prototype:"格林兄妹化身（叙事原型）", source:"格林童话集象征", tags:["故事律动","规则颠覆","童话变形"]},
+{ id:"A-377", prototype:"霍尔格（Holger Danske 传说）", source:"斯堪的纳维亚民间", tags:["守国沉睡","号角应醒","英雄复苏"]},
+{ id:"A-378", prototype:"露西法（Lucifer 变体以神话角度）", source:"民俗/圣经传说", tags:["晨星之光","诱导堕落","颠覆启示"]},
+{ id:"A-379", prototype:"圣巴巴拉 (St. Barbara)", source:"基督教圣徒传说", tags:["矿藏守护","爆破庇佑","雷电抗性"]},
+{ id:"A-380", prototype:"吉卜赛女巫（Gypsy Witch 原型）", source:"欧洲民俗", tags:["占卜之眼","命运读牌","旅者祝祷"]},
+
+{ id:"A-381", prototype:"夏娃 (Eve 历史/神话人物化)", source:"宗教文本", tags:["知识尝试","始祖诅咒","选择负担"]},
+{ id:"A-382", prototype:"亚当 (Adam)", source:"宗教文本", tags:["原始承载","土地契约","堕落遗留"]},
+{ id:"A-383", prototype:"玛丽（圣母／民间化）", source:"宗教与民俗", tags:["慈悲医治","祈祷屏障","祝福光环"]},
+{ id:"A-384", prototype:"玛雅女祭司伊莎（虚构命名以代表玛雅祭司个体）", source:"玛雅民俗衍生", tags:["星盘指示","祭祀诵章","历法触发"]},
+{ id:"A-385", prototype:"翁贝托·埃柯式学者（象征）", source:"文学化历史人物象征", tags:["符号解读","文本召唤","半真实显现"]},
+
+{ id:"A-386", prototype:"阿克汗（Akhénaten 变体）", source:"埃及法老史", tags:["太阳独尊","异教号令","王墓诡迹"]},
+{ id:"A-387", prototype:"尼菲尔（Nefertiti 变体）", source:"埃及王室象征", tags:["美貌威压","王权影子","文化遗音"]},
+{ id:"A-388", prototype:"伊凡雷帝 (Ivan the Terrible)", source:"俄国历史", tags:["恐怖统治","暴政余温","宫廷诅咒"]},
+{ id:"A-389", prototype:"彼得大帝 (Peter the Great)", source:"俄国历史", tags:["西化推动","铁腕改革","海军复兴"]},
+{ id:"A-390", prototype:"里奥波德（历史象征化）", source:"欧洲小国传奇", tags:["王室纷争","继承冲突","宫廷算计"]},
+
+{ id:"A-391", prototype:"安德烈·奇科夫（文学虚构）", source:"现代短篇虚构", tags:["档案挖掘","真相扭曲","史料召唤"]},
+{ id:"A-392", prototype:"拉尼斯特（家族化象征）", source:"现代奇幻族群象征", tags:["家法压制","金权操纵","誓约执守"]},
+{ id:"A-393", prototype:"半人马丘布（Chiron）", source:"希腊神话", tags:["导师治疗","箭术传授","药草识别"]},
+{ id:"A-394", prototype:"阿斯克勒庇俄斯 (Asclepius)", source:"希腊医神", tags:["医疮愈合","伤口重塑","生命延展"]},
+{ id:"A-395", prototype:"伊庇克勒斯（Epicurus 人物象征）", source:"古希腊哲学", tags:["快感与理性","生活之道","欲望衡量"]},
+
+{ id:"A-396", prototype:"阿基里斯之盾（原型为英雄相关可当标签示例）", source:"希腊史诗关联（注意：此为人物化表示）", tags:["守护反射","神镀护体","铁意不屈"]},
+{ id:"A-397", prototype:"奥德修斯 (Odysseus)", source:"荷马史诗", tags:["返乡诡计","航海智慧","化名潜行"]},
+{ id:"A-398", prototype:"佩涅洛佩 (Penelope)", source:"荷马史诗", tags:["守望耐心","织布幻术","忠贞反制"]},
+{ id:"A-399", prototype:"希佩里翁 (Hyperion)", source:"希腊泰坦传说", tags:["天体之力","光与时间印记","远古之视"]},
+{ id:"A-400", prototype:"墨丘利 (Mercury/赫尔墨斯拉丁化)", source:"罗马/希腊传承", tags:["信使疾行","贿赂交涉","边界穿梭"]},
+{ id:"A-401", prototype:"伊丽莎白·巴索里", source:"匈牙利历史/传说", tags:["血浴传说","青春诅咒","贵族隐秘","夜间采血"]},
+{ id:"A-402", prototype:"玛丽·西尔斯特（Mary Celeste 幽灵船长传说关联人物）", source:"海事谜案民间化", tags:["船长诅咒","孤船徘徊","失落日志","海雾掩护"]},
+{ id:"A-403", prototype:"大脚怪 (Sasquatch)", source:"北美民间传说", tags:["足迹证据","山林潜行","远古步音","目击传说"]},
+{ id:"A-404", prototype:"雪人 (Yeti)", source:"喜马拉雅民俗", tags:["高山潜踪","白雪伪装","野性之吼","冰域追踪"]},
+{ id:"A-405", prototype:"贝希摩斯 (Behemoth)", source:"犹太/基督教巨兽传说", tags:["腹地震荡","巨力踏压","肢体碾碎","土域破坏"]},
+
+{ id:"A-406", prototype:"利维坦 (Leviathan)", source:"海洋圣典/传说", tags:["海渊惊涛","巨口吞没","潮汐操纵","深渊召唤"]},
+{ id:"A-407", prototype:"红胡子约翰 (历史/传奇海盗)", source:"海盗传奇", tags:["黑帆恐吓","私掠统御","掠夺策略","火绳威慑"]},
+{ id:"A-408", prototype:"烟鬼托马斯（虚构取名代表煤矿幽魂类）", source:"工业时代民间故事", tags:["矿井幽火","煤尘呼吸","矿灯引路","地下埋怨"]},
+{ id:"A-409", prototype:"安提戈涅", source:"希腊悲剧/神话", tags:["道德反抉","忠义固执","墓地誓言","家族正义"]},
+{ id:"A-410", prototype:"柏拉图式幻影（以柏拉图思想拟人化）", source:"哲学象征化", tags:["理念投射","形相显化","洞穴映现","理想诱导"]},
+
+{ id:"A-411", prototype:"阿尔忒弥斯雅典娜（合并式避重名，为女神战术型）", source:"古希腊神话象征化", tags:["狩猎之眼","战术洞察","神弓加持","森林守护"]},
+{ id:"A-412", prototype:"巴尔德（Baldur 变体避免重名）", source:"北欧神话象征", tags:["光耀脆弱","纯洁反震","命运之伤","神性回响"]},
+{ id:"A-413", prototype:"黑泽明式导演原型（象征）", source:"现代文化象征", tags:["镜头构图","巨幕效果","叙事剪接","戏剧张力"]},
+{ id:"A-414", prototype:"莎乐美", source:"圣经与文学传说", tags:["舞诱致命","魅惑献礼","欲望交易","断头诱饵"]},
+{ id:"A-415", prototype:"伊凡雷帝", source:"俄国历史", tags:["铁腕统治","恐惧余烬","宫廷阴谋","血色政令"]},
+
+{ id:"A-416", prototype:"瓦尔基里长者（Valkyrie elder 变体）", source:"北欧战场传说", tags:["挑选英灵","战魂引渡","骑兵增幅","战旗召唤"]},
+{ id:"A-417", prototype:"布莱克伍德博士（虚构医师原型）", source:"哥特文学式人物", tags:["医学伦理扭曲","冷静解剖","寄生实验","理性失衡"]},
+{ id:"A-418", prototype:"龙之祭司（民俗单体原型化）", source:"东亚民间演绎", tags:["龙语呼唤","河流调控","雨雾祝祷","涌潮之令"]},
+{ id:"A-419", prototype:"镜中女王（镜面幽灵个体）", source:"民间镜像传说", tags:["镜像替代","自我复制","倒影诱导","内外交换"]},
+{ id:"A-420", prototype:"黑船使者（历史/传说混合体）", source:"航海历史传说", tags:["外来威压","条约撕裂","铁交来临","文明碰撞"]},
+
+{ id:"A-421", prototype:"帕凡纳（帕凡娜）女祭司（民俗个体）", source:"南亚/民间传说", tags:["祭祀之舞","毒草秘方","祈雨仪式","部落盟约"]},
+{ id:"A-422", prototype:"琵琶精（东亚妖怪型）", source:"民间故事", tags:["弦音蛊惑","记忆吸取","夜半抚触","情感缠绵"]},
+{ id:"A-423", prototype:"天狗", source:"日本民俗", tags:["天狗飞行","狩猎幻术","神域傲然","面具恐吓"]},
+{ id:"A-424", prototype:"河伯", source:"中国民间", tags:["河流交易","水域索命","婚姻契约","潮汐回应"]},
+{ id:"A-425", prototype:"九尾狐（单体具名）", source:"东亚民间", tags:["魅影化身","幻术撩心","易形诱惑","尾焰痕迹"]},
+
+{ id:"A-426", prototype:"赤松子（道教/民间真人）", source:"道教/民间传说", tags:["符箓驱邪","草木沟通","隐逸指引","长生传承"]},
+{ id:"A-427", prototype:"田螺姑娘（童话个体）", source:"民间故事", tags:["善行回报","容貌易变","水边祈福","契约之约"]},
+{ id:"A-428", prototype:"化蛇者（东南亚妖化个体）", source:"区域民俗", tags:["毒牙转化","魅灼之吻","蛇形短促","夜林伏击"]},
+{ id:"A-429", prototype:"穆罕默德历史意象（尊重性作为文化原型说明）", source:"宗教历史化（引用为原型须谨慎使用）", tags:["启示宣告","教义传播","信徒凝聚"]},
+{ id:"A-430", prototype:"阿巴顿（Abaddon）", source:"圣经/末世象征", tags:["灭绝担当","深渊开启","灾厄化身","毁灭序列"]},
+
+{ id:"A-431", prototype:"墨西拿的女巫（西西里民间个体）", source:"地中海民俗", tags:["邪术航海","风暴招募","秘密草药","夜半交易"]},
+{ id:"A-432", prototype:"村落守护老人（泛民俗单体）", source:"乡野传说", tags:["祈雨守护","边界祭祀","禁忌守护","夜巡铃声"]},
+{ id:"A-433", prototype:"钟表匠（文学化人物）", source:"欧洲小说象征", tags:["时间修补","齿轮裁度","精准回档","机械宿命"]},
+{ id:"A-434", prototype:"梦旅者（单一梦境实体化）", source:"民俗/文学", tags:["梦门接入","夜行导引","残片收藏","醒后代价"]},
+{ id:"A-435", prototype:"傀儡师（大师级个体）", source:"戏曲/民间", tags:["操线技艺","身外操控","替身交换","意念规训"]},
+
+{ id:"A-436", prototype:"圣乔治（龙猎者）", source:"基督教传奇", tags:["龙猎术","骑士祝福","信仰斩击","护民号角"]},
+{ id:"A-437", prototype:"圣女巴芭拉（矿工守护）", source:"圣徒传说", tags:["矿火守护","爆裂庇佑","祈祷护盾","火光照明"]},
+{ id:"A-438", prototype:"瓦尔普吉斯夜舞女（民俗个体象征）", source:"中欧民间", tags:["狂欢召集","火光舞步","夜色契约","魔法共振"]},
+{ id:"A-439", prototype:"卡米拉·德雷克（虚构吸血贵族原型）", source:"哥特浪漫化", tags:["夜宴吸血","贵族魅力","红袍诱惑","血誓缔结"]},
+{ id:"A-440", prototype:"拿督（马来/民间首领化）", source:"东南亚民俗", tags:["部族裁决","神灵通传","禁地号令","图腾共鸣"]},
+
+{ id:"A-441", prototype:"巫医（地域单一巫术个体）", source:"非洲/加勒比民俗", tags:["草药通灵","毒符祭祀","祖灵通信","替身祈祷"]},
+{ id:"A-442", prototype:"灰姑娘式复仇女子（民间个体化）", source:"欧洲童话变体", tags:["项链线索","鞋迹回收","一夜逆转","后宴复仇"]},
+{ id:"A-443", prototype:"夜门使（守夜幽灵）", source:"城镇传说", tags:["晚门封闭","黑曜察视","巡逻低语","夜幕守望"]},
+{ id:"A-444", prototype:"稻田守灵（农田个体灵体）", source:"亚洲民俗", tags:["收成契约","稻秧守望","丰年祝福","夜间窸窣"]},
+{ id:"A-445", prototype:"咖啡屋的亡灵诗人（都市传说个体）", source:"现代民间传说", tags:["诗句幻现","黑夜朗诵","半杯回忆","文思灌注"]},
+
+{ id:"A-446", prototype:"百目巨人（民间巨灵）", source:"世界传说变体", tags:["千目监视","盲点无所","岩壁屏障","视域爆发"]},
+{ id:"A-447", prototype:"银鬃女猎手（森林单体）", source:"民间故事", tags:["银矢连射","夜林嗅觉","兽心驯服","猎魂召缴"]},
+{ id:"A-448", prototype:"噬梦兽（梦境怪兽单体）", source:"现代奇幻/民俗", tags:["吞噬梦境","夜袭记忆","做梦代替","梦境残片"]},
+{ id:"A-449", prototype:"祭月老人（地方传说）", source:"地方民俗", tags:["月祭仪轨","银光护佑","引月共舞","皎洁封印"]},
+{ id:"A-450", prototype:"潮汐女巫（海岸单体）", source:"沿海传说", tags:["潮汐调律","沉船记忆","盐雾疗愈","帆影迷惑"]},
+
+{ id:"A-451", prototype:"殉道者之魂（宗教传说个体）", source:"圣徒与殉难者传说", tags:["烈火见证","血印显灵","信念化身","祭坛回响"]},
+{ id:"A-452", prototype:"无眠者（夜间游魂个体）", source:"都市怪谈", tags:["永夜觉醒","眼白闪瞳","疲惫侵蚀","睡眠剥夺"]},
+{ id:"A-453", prototype:"长街讲故事的老人（城市个体）", source:"民间口述传统", tags:["故事具现","历史复刻","谣言成形","口耳相传"]},
+{ id:"A-454", prototype:"镜湖女（湖区幽影）", source:"湖泊民俗", tags:["水中映像","献礼索命","湖面鏡語","夜雾诱引"]},
+{ id:"A-455", prototype:"警钟守护者（教堂幽灵）", source:"教堂传说", tags:["钟声震魂","召救警示","灵光投射","旧约回声"]},
+
+{ id:"A-456", prototype:"剃刀歌者（街头传说个体）", source:"城市传说", tags:["刃之旋律","街角徘徊","低声诱唱","皮囊恐吓"]},
+{ id:"A-457", prototype:"铁面王（骑士/暴君个体）", source:"中世纪传说", tags:["钢面无情","号令压制","盔甲反弹","王座冷凝"]},
+{ id:"A-458", prototype:"夜行裁缝（暗夜个体工匠）", source:"民间故事", tags:["针线缝合","影中修补","替代记忆","皮囊更新"]},
+{ id:"A-459", prototype:"符文老妇（山村术士）", source:"民俗传说", tags:["刮刻符文","旧石祈咒","命符置放","护村锁定"]},
+{ id:"A-460", prototype:"孤灯旅人（道路幽灵）", source:"旅者传说", tags:["路灯指引","避雷行迹","孤影交换","旅途缠绕"]},
+
+{ id:"A-461", prototype:"马拉（噩梦女妖）", source:"南亚/中亚民间", tags:["噩梦妄想","夜间掠夺","醒觉残影","睡眠恐咒"]},
+{ id:"A-462", prototype:"铁匠巨灵（锻造守护）", source:"铁匠信仰化个体", tags:["炉火附体","锤击法阵","武器锻命","铁心不动"]},
+{ id:"A-463", prototype:"毒苹果女（童话变体）", source:"童话演化", tags:["果核毒性","一口沉睡","外貌诱惑","复苏救赎"]},
+{ id:"A-464", prototype:"孤岛守望者（灯塔幽魂）", source:"航海民间", tags:["灯塔光束","迷航修正","孤誓守护","海雾哨声"]},
+{ id:"A-465", prototype:"月下舞者（传说个体）", source:"节日传说", tags:["月光舞姿","夜间牵引","魅力蔓延","节日诅咒"]},
+
+{ id:"A-466", prototype:"黑曜守卫（城墙守灵）", source:"城池传说", tags:["城墙强化","箭塔凝视","守护屏障","古誓唤醒"]},
+{ id:"A-467", prototype:"风行匠（旅行发明家）", source:"民间传奇", tags:["风车驱动","风语通讯","道路简化","机械随身"]},
+{ id:"A-468", prototype:"摘星女（天文祭司化个体）", source:"古代祭仪", tags:["星盘读取","流星捕捉","命象指引","天象借力"]},
+{ id:"A-469", prototype:"夜枭（隐秘狩猎者）", source:"民间化妖兽个体", tags:["夜目穿透","静音扑袭","羽翼压迫","哀鸣示警"]},
+{ id:"A-470", prototype:"铁血修士（修道武士个体）", source:"教会传说化", tags:["信条武装","祈祷锁定","圣油涂灸","灰烬忏悔"]},
+
+{ id:"A-471", prototype:"墨镜男（都市观察者）", source:"现代都市传说", tags:["目光隔绝","冷眼注视","身份匿隐","线索收集"]},
+{ id:"A-472", prototype:"断指琴师（街头传说）", source:"都市传说", tags:["斩音残响","断指献曲","黑巷演奏","记忆回音"]},
+{ id:"A-473", prototype:"织梦老妇（古民间女子）", source:"民俗故事", tags:["夜编梦网","愿望收束","梦中庇护","代价索求"]},
+{ id:"A-474", prototype:"猎月人（狩猎月夜的个体）", source:"传说", tags:["月光陷阱","银箭贯心","幽林追踪","冷血计算"]},
+{ id:"A-475", prototype:"丘比特式守护者（爱之代理个体）", source:"神话象征化", tags:["爱情锁定","情感箭矢","羁绊加成","信任撬动"]},
+
+{ id:"A-476", prototype:"远征者之魂（探险英雄个体）", source:"航海探险传说", tags:["求知执念","地图洞察","遗迹探测","同侪鼓舞"]},
+{ id:"A-477", prototype:"铁面笑匠（戏剧化恐怖者）", source:"歌剧/民间杂糅", tags:["面具假笑","恐怖表演","掌声收割","笑声感染"]},
+{ id:"A-478", prototype:"枯井女（井边幽魂）", source:"村落鬼谈", tags:["井水回音","深渊呼唤","水面显影","夜间投影"]},
+{ id:"A-479", prototype:"药师（古方医者）", source:"古医秘典", tags:["方剂复生","解毒之术","体质改良","药性附体"]},
+{ id:"A-480", prototype:"铃儿童（节日守护个体）", source:"节日传说", tags:["铃声祝福","节日庇佑","祈福回响","洁净仪式"]},
+
+{ id:"A-481", prototype:"追星猎（天象追随者）", source:"星象民俗", tags:["流星指引","星愿兑现","天象读卡","轨迹追踪"]},
+{ id:"A-482", prototype:"黄蜂女（复仇刺客个体）", source:"民间故事", tags:["翼针刺杀","速度穿插","群蜂扰敌","毒牙残留"]},
+{ id:"A-483", prototype:"铜鼻老人（工匠化个体）", source:"市集传说", tags:["鼻息探测","金属感知","古物识别","赝品识破"]},
+{ id:"A-484", prototype:"迷路孩（迷途幽灵）", source:"乡野伦理故事", tags:["路标错置","方向偷换","归路封锁","回忆断层"]},
+{ id:"A-485", prototype:"旧书守夜人（图书馆幽影）", source:"文献传说", tags:["书页低语","字词具像","限定借阅","禁书映射"]},
+
+{ id:"A-486", prototype:"书痴法师（文字魔术个体）", source:"学院传说", tags:["文字化术","语句召唤","句法束缚","注释显灵"]},
+{ id:"A-487", prototype:"铁轨行者（铁路幽影）", source:"工业传说", tags:["轨道指引","列车幽鸣","时间延缓","站台错位"]},
+{ id:"A-488", prototype:"雕刻者（石像造者个体）", source:"工艺与传说", tags:["石化工艺","神像赋命","面容定格","雕刻诅咒"]},
+{ id:"A-489", prototype:"夜幕餐馆掌柜（城市传说单体）", source:"都市民间", tags:["午夜菜单","愿望菜肴","替代交换","饥饿诱饵"]},
+{ id:"A-490", prototype:"钟塔守灵（塔楼个体）", source:"城镇传说", tags:["塔影蔓延","时刻遵守","钟声回溯","误时惩罚"]},
+
+{ id:"A-491", prototype:"孤狼长者（部族传说）", source:"北方民俗", tags:["狼嗥号令","群兽统领","寒地狩猎","部族规约"]},
+{ id:"A-492", prototype:"暮色画师（画中活者）", source:"艺术民间传说", tags:["画布出逃","色彩具象","被画召唤","颜料契约"]},
+{ id:"A-493", prototype:"白昼守望者（光之使者）", source:"民间传说", tags:["日间监视","光域净化","昼魂引导","影子斩除"]},
+{ id:"A-494", prototype:"灰市商（黑市幽灵）", source:"都市传说", tags:["秘密交易","禁物兑换","代价连锁","账本残影"]},
+{ id:"A-495", prototype:"护林人（古林个体）", source:"乡野传说", tags:["树语沟通","兽灵引领","猎场封锁","林中法则"]},
+
+{ id:"A-496", prototype:"漂泊琴匠（流浪艺人个体）", source:"民谣传说", tags:["弦音疗愈","旋律诱导","记忆拾遗","流浪故事"]},
+{ id:"A-497", prototype:"白袍贤者（学院导师个体）", source:"学术传说", tags:["理性光环","知识箴言","禁书守护","试炼题目"]},
+{ id:"A-498", prototype:"寂静少女（沉默幽灵）", source:"校园/城镇怪谈", tags:["无言凝视","笔迹显灵","沉默诅咒","日记回响"]},
+{ id:"A-499", prototype:"海角守魂（灯塔守灵个体）", source:"海岸传说", tags:["海角之誓","航标稳定","潮汐回声","失落导航"]},
+{ id:"A-500", prototype:"星辰祭司（星象民俗个体）", source:"古代祭典", tags:["星图解读","夜祭启示","命星标注","星尘礼仪"]}
+];
+
+const poolDiv = document.getElementById('pool');
+const countSpan = document.getElementById('count');
+const resultProto = document.querySelector('.result .proto');
+const resultSrc = document.querySelector('.result .src');
+const tagWrap = document.getElementById('tagWrap');
+const drawBtn = document.getElementById('drawBtn');
+const fileInput = document.getElementById('fileInput');
+const exportBtn = document.getElementById('exportBtn');
+const fillBtn = document.getElementById('fillBtn');
+const searchInput = document.getElementById('search');
+const copyBtn = document.getElementById('copyBtn');
+const clearBtn = document.getElementById('clearBtn');
+
+function renderPool(list){
+  poolDiv.innerHTML = '';
+  list.forEach(it=>{
+    const d = document.createElement('div'); d.className='item';
+    d.innerHTML = '<div class="prototype">'+it.prototype+'</div><div class="source">'+it.source+'</div><div class="tags">'+(it.tags?it.tags.join(' · '):'')+'</div>';
+    poolDiv.appendChild(d);
+  });
+  countSpan.textContent = list.length;
+}
+
+function drawOne(filtered){
+  if(!filtered || filtered.length===0) return;
+  const idx = Math.floor(Math.random()*filtered.length);
+  const pick = filtered[idx];
+  resultProto.textContent = pick.prototype;
+  resultSrc.textContent = '来源：' + pick.source;
+  tagWrap.innerHTML = '';
+  (pick.tags||[]).forEach(t=>{
+    const s = document.createElement('span'); s.className='tag'; s.textContent = t; tagWrap.appendChild(s);
+  });
+  // scroll to result
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+drawBtn.onclick = ()=> drawOne(getFiltered());
+fileInput.onchange = (e)=>{
+  const f = e.target.files[0];
+  if(!f) return;
+  const r = new FileReader();
+  r.onload = ()=> {
+    try{
+      const data = JSON.parse(r.result);
+      if(!Array.isArray(data)) return alert('JSON 必须是数组');
+      // basic validate
+      const ok = data.every(it => it.prototype && it.source && Array.isArray(it.tags));
+      if(!ok) return alert('每项需要 prototype, source, tags（数组）字段');
+      pool = data.map((it, i) => ({id: it.id || ('i'+i), ...it}));
+      renderPool(getFiltered());
+      alert('导入成功,条目数 ' + pool.length);
+    }catch(err){ alert('读取错误：' + err.message) }
+  };
+  r.readAsText(f);
+  e.target.value = '';
+};
+exportBtn.onclick = ()=> {
+  const b = new Blob([JSON.stringify(pool, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(b);
+  const a = document.createElement('a'); a.href=url; a.download='shenfa_pool.json'; a.click();
+  URL.revokeObjectURL(url);
+};
+fillBtn.onclick = ()=> {
+  if(pool.length>=700){ alert('已 >= 700'); return; }
+  const base = pool.slice();
+  let idx=1;
+  while(pool.length < 700){
+    const b = base[(pool.length) % base.length];
+    pool.push({id: b.id + '-dup' + idx, prototype: b.prototype, source: b.source, tags: b.tags});
+    idx++;
+  }
+  renderPool(getFiltered());
+  alert('已填充到 700（占位）');
+};
+searchInput.oninput = ()=> renderPool(getFiltered());
+copyBtn.onclick = ()=> {
+  const cur = {prototype: resultProto.textContent, source: resultSrc.textContent.replace(/^来源：/,'') , tags: Array.from(tagWrap.children).map(n=>n.textContent)};
+  navigator.clipboard.writeText(JSON.stringify(cur, null, 2)).then(()=>alert('已复制当前结果 JSON 到剪贴板'));
+};
+clearBtn.onclick = ()=> {
+  resultProto.textContent='尚未抽取'; resultSrc.textContent=''; tagWrap.innerHTML='';
+};
+
+function getFiltered(){
+  const q = (searchInput.value||'').trim().toLowerCase();
+  if(!q) return pool;
+  return pool.filter(it => (it.prototype + ' ' + it.source + ' ' + (it.tags||[]).join(' ')).toLowerCase().includes(q));
+}
+
+/* initial render */
+renderPool(pool);
+</script>
+</body>
+</html>
+
+
+
+
+
